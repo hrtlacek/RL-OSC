@@ -12,3 +12,10 @@ pip install -r requirements.txt
 ## Run:
 - in a terminal, with the activated virtual environment run a learning session via `python rlEnv.py --inport 5000 --outport 3030`
 - Use any OSC-capable program (pd, max) to send observations and receive actions.
+
+- Action space is currently normalized to a -1 to 1 range. Observations are normalized to a 0 to 1 range.
+
+
+## Acknowledgements
+Made in The Project "Spirits in Comnplexity", funded by the Austrian Science Fund [10.55776/AR821].
+

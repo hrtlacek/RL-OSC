@@ -10,29 +10,47 @@ import util
 import os
 from pythonosc import dispatcher, osc_server
 from pythonosc.udp_client import SimpleUDPClient
-
 from gymnasium.utils.env_checker import check_env
+from stable_baselines3 import A2C
 import argparse
 
 parser = argparse.ArgumentParser(
                     prog='RL OSC',
-                    description='What the program does',
-                    epilog='Text at the bottom of help')
+                    description='An OSC based Reinforcement Learning Environment and model training.',
+                    epilog='Made in The Project "Spirits in Comnplexity", funded by the Austrian Science Fund [10.55776/AR821]')
 
-parser.add_argument('--inport', type=int)
-parser.add_argument('--outport', type=int)
+parser.add_argument('--inport', type=int, default=5000)
+parser.add_argument('--outport', type=int, default=3000)
+parser.add_argument('-v','--verbose', action='store_true', help='Verbose mode.')
+parser.add_argument('-dt','--deltatime', type=int, help='Time delay between steps in milliseconds.')
+parser.add_argument('-Ni', '--numInput', type=int, default=8, help='Input array size (dimensionality of one observation)')
+parser.add_argument('-No', '--numOutput',type=int, default=8, help='Output array size (dimensionality of one action)')
+
+parser.add_argument('-vv','--vverbose', action='store_true', help='Very verbose mode.')
+
+
 
 args = parser.parse_args()
 INPORT = args.inport
 OUTPORT = args.outport
+verbose = args.verbose
+
+vverbose = args.vverbose
+
 
 
 warnings.filterwarnings("ignore", message="X does not have valid feature names")
 logger = logging.getLogger("colored_logger")
 
-#logger.setLevel(logging.DEBUG)
-logger.setLevel(logging.INFO)
-# logger.setLevel(logging.CRITICAL)
+if vverbose:
+    logger.setLevel(logging.DEBUG)
+    modelVerbosity = 1
+elif verbose:
+    logger.setLevel(logging.INFO)
+    modelVerbosity = 1
+else:
+    logger.setLevel(logging.CRITICAL)
+    modelVerbosity = 1
 # https://gymnasium.farama.org/introduction/create_custom_env/
 
 # === Key design questions ===
@@ -207,21 +225,6 @@ class OscEnv(gym.Env):
             self.thread.join(timeout=1.0)
 
 
-# # This will catch many common issues
-# env = OscEnv()
-
-# print(env.reset())
-
-# try:
-#     check_env(env)
-#     print("Environment passes all checks!")
-# except Exception as e:
-#     print(f"Environment has issues: {e}")
-
-
-# time.sleep(10)
-# env.close()
-
 
 
 env = OscEnv(inport=INPORT, outport=OUTPORT)
@@ -229,11 +232,10 @@ obs, _ = env.reset()
 
 
 
-from stable_baselines3 import A2C
 
 # env = gym.make("CartPole-v1", render_mode="rgb_array")
 
-model = A2C("MultiInputPolicy", env, verbose=1)
+model = A2C("MultiInputPolicy", env, verbose=modelVerbosity)
 model.learn(total_timesteps=10_000)
 
 vec_env = model.get_env()
