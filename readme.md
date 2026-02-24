@@ -1,4 +1,4 @@
-# RL OSC Environment 
+# RL OSC 
 This Project creates a simple OSC (Open Sound Control) Reinforcement Learning Environment and an Agent that learns in it in real time. Actions and Observations are sent/received via UDP / OSC. 
 
 ## Install
