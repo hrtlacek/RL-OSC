@@ -15,7 +15,7 @@ from gymnasium.utils.env_checker import check_env
 import argparse
 
 parser = argparse.ArgumentParser(
-                    prog='ProgramName',
+                    prog='RL OSC',
                     description='What the program does',
                     epilog='Text at the bottom of help')
 
@@ -82,12 +82,12 @@ class OscEnv(gym.Env):
 
         self.observation_space = gym.spaces.Dict(
             {
-                "agentState": gym.spaces.Box(low=-10, high=10, shape=(self.size,), dtype=np.float32),   # own state, possibly current latent space
-                "envState": gym.spaces.Box(low=-1, high=1, shape=(self.size,), dtype=np.float32),  # input audio features (other agents state).
+                "agentState": gym.spaces.Box(low=0, high=1, shape=(self.size,), dtype=np.float32),   # own state, possibly current latent space
+                "envState": gym.spaces.Box(low=0, high=1, shape=(self.size,), dtype=np.float32),  # input audio features (other agents state).
             }
         )
 
-        self.action_space = gym.spaces.Box(low=-10,high=10, shape=(8,), dtype=np.float32)
+        self.action_space = gym.spaces.Box(low=-1,high=1, shape=(8,), dtype=np.float32)
 
     def handle_osc_input(self, addr, *args):
         logger.debug(args)
@@ -131,7 +131,7 @@ class OscEnv(gym.Env):
         # Update agent position, ensuring it stays within grid bounds
         # np.clip prevents the agent from walking off the edge
         self._agent_location = np.clip(
-            self._agent_location + action, -10, 10
+            self._agent_location + action, -1, 1
         )
         # print(self._agent_location)
         # print(type(self._agent_location))
@@ -148,8 +148,8 @@ class OscEnv(gym.Env):
         # Simple reward structure: +1 for reaching target, 0 otherwise
         # Alternative: could give small negative rewards for each step to encourage efficiency
         
-        ownLoudness = self.last_obs[1]
-        otherLoudness = self.last_obs[0]
+        #ownLoudness = self.last_obs[1]
+        #otherLoudness = self.last_obs[0]
 
         #reward = float(abs(ownLoudness/(self.last_obs[0]+1e-6)))
         # reward = float(1/((np.sum(self.last_obs)) +1e-5)) #1 if terminated else 0
@@ -161,7 +161,7 @@ class OscEnv(gym.Env):
         observation = self._get_obs()
         logger.debug(f"Observation: {observation}")
         info = self._get_info()
-        time.sleep(0.02)
+        time.sleep(0.1)
         return observation, reward, terminated, truncated, info
     
 

@@ -10,4 +10,4 @@ pip install -r requirements.txt
 
 ## Run:
 - open pd patch `testPdEnv.pd`. Uses `[nn~]` and was only tested using `plugdata`, so might use additional non-vanilla objects.
-- in a terminal, with the activated virtual environment run a learning session via `python rlEnv.py`
+- in a terminal, with the activated virtual environment run a learning session via `python rlEnv.py --inport 5000 --outport 3030`
