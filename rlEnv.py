@@ -12,11 +12,25 @@ from pythonosc import dispatcher, osc_server
 from pythonosc.udp_client import SimpleUDPClient
 
 from gymnasium.utils.env_checker import check_env
+import argparse
+
+parser = argparse.ArgumentParser(
+                    prog='ProgramName',
+                    description='What the program does',
+                    epilog='Text at the bottom of help')
+
+parser.add_argument('--inport', type=int)
+parser.add_argument('--outport', type=int)
+
+args = parser.parse_args()
+INPORT = args.inport
+OUTPORT = args.outport
+
 
 warnings.filterwarnings("ignore", message="X does not have valid feature names")
 logger = logging.getLogger("colored_logger")
 
-# logger.setLevel(logging.DEBUG)
+#logger.setLevel(logging.DEBUG)
 logger.setLevel(logging.INFO)
 # logger.setLevel(logging.CRITICAL)
 # https://gymnasium.farama.org/introduction/create_custom_env/
@@ -38,14 +52,14 @@ logger.setLevel(logging.INFO)
 
 
 class OscEnv(gym.Env):
-    def __init__(self):
+    def __init__(self, inport=5000, outport=3030):
         
-        self.IN_PORT = 5000
+        self.IN_PORT = inport
         self.IN_IP = '0.0.0.0'
         self.IN_ADDR = "/toRLosc"
 
         self.OUT_IP = '127.0.0.1'
-        self.OUT_PORT = 3030
+        self.OUT_PORT = outport
         self.OUT_ADDR = "/fromRLosc"
 
         self.size = 8
@@ -76,7 +90,7 @@ class OscEnv(gym.Env):
         self.action_space = gym.spaces.Box(low=-10,high=10, shape=(8,), dtype=np.float32)
 
     def handle_osc_input(self, addr, *args):
-        # logger.debug(args)
+        logger.debug(args)
         data = np.array(args[:self.size],dtype=np.float32)
         logger.debug(f"data received: {data}")
         self.last_obs = data
@@ -137,9 +151,9 @@ class OscEnv(gym.Env):
         ownLoudness = self.last_obs[1]
         otherLoudness = self.last_obs[0]
 
-        reward = float(abs(ownLoudness/(self.last_obs[0]+1e-6)))
+        #reward = float(abs(ownLoudness/(self.last_obs[0]+1e-6)))
         # reward = float(1/((np.sum(self.last_obs)) +1e-5)) #1 if terminated else 0
-        
+        reward = float(np.sum(np.array(self.last_obs)))
         
         self.client.send_message("/reward", reward)
         logger.info(f"Reward: {reward}")
@@ -210,7 +224,7 @@ class OscEnv(gym.Env):
 
 
 
-env = OscEnv()
+env = OscEnv(inport=INPORT, outport=OUTPORT)
 obs, _ = env.reset()
 
 
