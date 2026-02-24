@@ -19,3 +19,8 @@ pip install -r requirements.txt
 ## Acknowledgements
 Made in The Project "Spirits in Comnplexity", funded by the Austrian Science Fund [10.55776/AR821].
 
+
+## Todos
+- Commandline arg for adresses.
+- Warnings for data received in wrong formats (wrong list lengths specifically)
+- Document default adresses in readme.
