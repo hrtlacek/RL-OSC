@@ -20,24 +20,34 @@ parser = argparse.ArgumentParser(
                     epilog='Made in The Project "Spirits in Comnplexity", funded by the Austrian Science Fund [10.55776/AR821]')
 
 parser.add_argument('--inport', type=int, default=5000)
-parser.add_argument('--outport', type=int, default=3000)
+parser.add_argument('--outport', type=int, default=3030)
 parser.add_argument('-v','--verbose', action='store_true', help='Verbose mode.')
-parser.add_argument('-dt','--deltatime', type=int, help='Time delay between steps in milliseconds.')
+parser.add_argument('-vv','--vverbose', action='store_true', help='Very verbose mode.')
+
+parser.add_argument('-dt','--deltaTime', type=int, default=10, help='Time delay between steps in milliseconds.')
 parser.add_argument('-Ni', '--numInput', type=int, default=8, help='Input array size (dimensionality of one observation)')
 parser.add_argument('-No', '--numOutput',type=int, default=8, help='Output array size (dimensionality of one action)')
 
-parser.add_argument('-vv','--vverbose', action='store_true', help='Very verbose mode.')
+parser.add_argument('-iA', '--inAddress', type=str, default='/toRLosc', help='the osc adress on which observations are received.')
+parser.add_argument('-oA', '--outAddress', type=str, default='/fromRLosc', help='the osc adress on which actions are sent.')
 
-
+parser.add_argument('-n', '--numSteps', type=int, default=1_000_000, help='The number of steps to train.')
 
 args = parser.parse_args()
-INPORT = args.inport
+
+INPORT =  args.inport
 OUTPORT = args.outport
 verbose = args.verbose
 
 vverbose = args.vverbose
 
+nSteps =  args.numSteps
+INADDR =  args.inAddress
+OUTADDR = args.outAddress
 
+nObserv = args.numInput
+nAction = args.numOutput
+dt = args.deltaTime/1000.
 
 warnings.filterwarnings("ignore", message="X does not have valid feature names")
 logger = logging.getLogger("colored_logger")
@@ -50,7 +60,7 @@ elif verbose:
     modelVerbosity = 1
 else:
     logger.setLevel(logging.CRITICAL)
-    modelVerbosity = 1
+    modelVerbosity = 0
 # https://gymnasium.farama.org/introduction/create_custom_env/
 
 # === Key design questions ===
@@ -70,18 +80,19 @@ else:
 
 
 class OscEnv(gym.Env):
-    def __init__(self, inport=5000, outport=3030):
+    def __init__(self, inport=5000, outport=3030, 
+                 inAddr = '/toRLosc', outAddr = 'fromRLosc', nObserv=8, nAction=8, dt=0.1):
         
         self.IN_PORT = inport
         self.IN_IP = '0.0.0.0'
-        self.IN_ADDR = "/toRLosc"
+        self.IN_ADDR = inAddr #"/toRLosc"
 
         self.OUT_IP = '127.0.0.1'
         self.OUT_PORT = outport
-        self.OUT_ADDR = "/fromRLosc"
+        self.OUT_ADDR = outAddr #"/fromRLosc"
 
-        self.size = 8
-
+        self.size = nObserv
+        self.dt = dt
         self.last_obs = np.zeros(self.size, dtype=np.float32)
 
         self.disp = dispatcher.Dispatcher()
@@ -105,7 +116,7 @@ class OscEnv(gym.Env):
             }
         )
 
-        self.action_space = gym.spaces.Box(low=-1,high=1, shape=(8,), dtype=np.float32)
+        self.action_space = gym.spaces.Box(low=-1,high=1, shape=(nAction,), dtype=np.float32)
 
     def handle_osc_input(self, addr, *args):
         logger.debug(args)
@@ -179,7 +190,7 @@ class OscEnv(gym.Env):
         observation = self._get_obs()
         logger.debug(f"Observation: {observation}")
         info = self._get_info()
-        time.sleep(0.1)
+        time.sleep(self.dt)
         return observation, reward, terminated, truncated, info
     
 
@@ -227,7 +238,13 @@ class OscEnv(gym.Env):
 
 
 
-env = OscEnv(inport=INPORT, outport=OUTPORT)
+env = OscEnv(inport=INPORT, 
+             outport=OUTPORT, 
+             inAddr=INADDR, 
+             outAddr=OUTADDR, 
+             nObserv=nObserv, 
+             nAction=nAction, 
+             dt=dt)
 obs, _ = env.reset()
 
 
