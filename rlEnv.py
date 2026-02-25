@@ -25,13 +25,17 @@ parser.add_argument('-v','--verbose', action='store_true', help='Verbose mode.')
 parser.add_argument('-vv','--vverbose', action='store_true', help='Very verbose mode.')
 
 parser.add_argument('-dt','--deltaTime', type=int, default=10, help='Time delay between steps in milliseconds.')
-parser.add_argument('-Ni', '--numInput', type=int, default=8, help='Input array size (dimensionality of one observation)')
-parser.add_argument('-No', '--numOutput',type=int, default=8, help='Output array size (dimensionality of one action)')
+parser.add_argument('-nI', '--numInput', type=int, default=8, help='Input array size (dimensionality of one observation)')
+parser.add_argument('-nO', '--numOutput',type=int, default=8, help='Output array size (dimensionality of one action)')
 
 parser.add_argument('-iA', '--inAddress', type=str, default='/toRLosc', help='the osc adress on which observations are received.')
 parser.add_argument('-oA', '--outAddress', type=str, default='/fromRLosc', help='the osc adress on which actions are sent.')
 
 parser.add_argument('-n', '--numSteps', type=int, default=1_000_000, help='The number of steps to train.')
+parser.add_argument('-r', '--internalReward', action='store_true', help="If set, the reward function is just the sum of the obersvations and no reward needs to be sent.")
+
+parser.add_argument('-s', '--agentSpeed', default = 0.01, help='Agent speed. The maximum step the agent can do when trying to move through space.')
+
 
 args = parser.parse_args()
 
@@ -48,6 +52,8 @@ OUTADDR = args.outAddress
 nObserv = args.numInput
 nAction = args.numOutput
 dt = args.deltaTime/1000.
+internalReward = args.internalReward
+agentSpeed = args.agentSpeed
 
 warnings.filterwarnings("ignore", message="X does not have valid feature names")
 logger = logging.getLogger("colored_logger")
@@ -81,8 +87,14 @@ else:
 
 class OscEnv(gym.Env):
     def __init__(self, inport=5000, outport=3030, 
-                 inAddr = '/toRLosc', outAddr = 'fromRLosc', nObserv=8, nAction=8, dt=0.1):
-        
+                 inAddr = '/toRLosc', 
+                 outAddr = 'fromRLosc', 
+                 nObserv=8, 
+                 nAction=8, 
+                 dt=0.1,
+                 internalReward = True,
+                 agentSpeed=0.01 ):
+        self.agentSpeed = agentSpeed      
         self.IN_PORT = inport
         self.IN_IP = '0.0.0.0'
         self.IN_ADDR = inAddr #"/toRLosc"
@@ -92,11 +104,17 @@ class OscEnv(gym.Env):
         self.OUT_ADDR = outAddr #"/fromRLosc"
 
         self.size = nObserv
+        self.nAction = nAction
         self.dt = dt
         self.last_obs = np.zeros(self.size, dtype=np.float32)
-
+        self.internalReward = internalReward 
+        
         self.disp = dispatcher.Dispatcher()
         self.disp.map(self.IN_ADDR, self.handle_osc_input)
+        if not self.internalReward:
+            self.last_reward = 0
+            self.disp.map('/reward', self.handle_osc_input)
+
         self.server = osc_server.ThreadingOSCUDPServer((self.IN_IP, self.IN_PORT), self.disp)
         logger.info(f"Listening for OSC on port {self.IN_PORT}...")
         
@@ -119,11 +137,23 @@ class OscEnv(gym.Env):
         self.action_space = gym.spaces.Box(low=-1,high=1, shape=(nAction,), dtype=np.float32)
 
     def handle_osc_input(self, addr, *args):
-        logger.debug(args)
-        data = np.array(args[:self.size],dtype=np.float32)
-        logger.debug(f"data received: {data}")
-        self.last_obs = data
+        if addr==self.IN_ADDR:
+            logger.debug(args)
+            data = np.array(args[:self.size],dtype=np.float32)
+            logger.debug(f"data received: {data}")
+            if len(data) != self.size:
+                logger.critical("Received the wrong number of observations!")
+                logger.critical(f"Data received: {data}")
+                #self.last_obs = np.zeros(self.size)
+                return
+            self.last_obs = data
 
+        elif addr == '/reward':
+            rew = float(args[0])
+            logger.debug(f'Received reward: {rew}')
+            self.last_reward = rew
+        else:
+            print(f'Rceived something weird: {addr}')
 
     def _get_obs(self):
         """Convert internal state to observation format.
@@ -141,7 +171,7 @@ class OscEnv(gym.Env):
         """
         return {
             "inputFeatures": 
-                self._target_location
+                self.last_obs
         }
 
     
@@ -160,7 +190,7 @@ class OscEnv(gym.Env):
         # Update agent position, ensuring it stays within grid bounds
         # np.clip prevents the agent from walking off the edge
         self._agent_location = np.clip(
-            self._agent_location + action, -1, 1
+            self._agent_location + action*self.agentSpeed, -1, 1
         )
         # print(self._agent_location)
         # print(type(self._agent_location))
@@ -182,7 +212,10 @@ class OscEnv(gym.Env):
 
         #reward = float(abs(ownLoudness/(self.last_obs[0]+1e-6)))
         # reward = float(1/((np.sum(self.last_obs)) +1e-5)) #1 if terminated else 0
-        reward = float(np.sum(np.array(self.last_obs)))
+        if internalReward:
+            reward = float(np.sum(np.array(self.last_obs)))
+        else:
+            reward = self.last_reward
         
         self.client.send_message("/reward", reward)
         logger.info(f"Reward: {reward}")
@@ -215,7 +248,7 @@ class OscEnv(gym.Env):
         # Randomly place the agent anywhere in the space
         self._agent_location = self.np_random.random(size=self.size, dtype=np.float32)
 
-        self._target_location = self.np_random.random(size=self.size, dtype=np.float32)
+        #self._target_location = self.np_random.random(size=self.size, dtype=np.float32)
         # # Randomly place target, ensuring it's different from agent position
         # self._target_location = self._agent_location
         # while np.array_equal(self._target_location, self._agent_location):
@@ -235,31 +268,25 @@ class OscEnv(gym.Env):
         if hasattr(self, "thread"):
             self.thread.join(timeout=1.0)
 
-
-
-
 env = OscEnv(inport=INPORT, 
              outport=OUTPORT, 
              inAddr=INADDR, 
              outAddr=OUTADDR, 
              nObserv=nObserv, 
              nAction=nAction, 
-             dt=dt)
+             dt=dt,
+             internalReward = internalReward,
+             agentSpeed=agentSpeed  )
 obs, _ = env.reset()
 
-
-
-
-# env = gym.make("CartPole-v1", render_mode="rgb_array")
-
 model = A2C("MultiInputPolicy", env, verbose=modelVerbosity)
-model.learn(total_timesteps=10_000)
+model.learn(total_timesteps=nSteps)
 
-vec_env = model.get_env()
-obs = vec_env.reset()
-for i in range(1000):
-    action, _state = model.predict(obs, deterministic=True)
-    obs, reward, done, info = vec_env.step(action)
+#vec_env = model.get_env()
+#obs = vec_env.reset()
+#for i in range(nSteps):
+#    action, _state = model.predict(obs, deterministic=True)
+#    obs, reward, done, info = vec_env.step(action)
     
     # vec_env.render("human")
     # VecEnv resets automatically

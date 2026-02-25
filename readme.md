@@ -20,6 +20,5 @@ Made in The Project "Spirits in Comnplexity", funded by the Austrian Science Fun
 
 
 ## Todos
-- Warnings for data received in wrong formats (wrong list lengths specifically)
 - Document default adresses in readme.
 - shebang & rights.
