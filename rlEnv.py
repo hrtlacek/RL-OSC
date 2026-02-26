@@ -34,8 +34,8 @@ parser.add_argument('-oA', '--outAddress', type=str, default='/fromRLosc', help=
 parser.add_argument('-n', '--numSteps', type=int, default=1_000_000, help='The number of steps to train.')
 parser.add_argument('-r', '--internalReward', action='store_true', help="If set, the reward function is just the sum of the obersvations and no reward needs to be sent.")
 
-parser.add_argument('-s', '--agentSpeed', default = 0.01, help='Agent speed. The maximum step the agent can do when trying to move through space.')
-
+parser.add_argument('-s', '--agentSpeed', type=float, default = 0.01, help='Agent speed. The maximum step the agent can do when trying to move through space.')
+parser.add_argument('-eS', '--episodeSteps', type=int, default=500, help='Maximum Number of steps per episode.')
 
 args = parser.parse_args()
 
@@ -54,6 +54,9 @@ nAction = args.numOutput
 dt = args.deltaTime/1000.
 internalReward = args.internalReward
 agentSpeed = args.agentSpeed
+maxEpisodeSteps = args.episodeSteps
+
+
 
 warnings.filterwarnings("ignore", message="X does not have valid feature names")
 logger = logging.getLogger("colored_logger")
@@ -93,12 +96,12 @@ class OscEnv(gym.Env):
                  nAction=8, 
                  dt=0.1,
                  internalReward = True,
-                 agentSpeed=0.01 ):
+                 agentSpeed=0.01, maxEpisodeSteps = 500 ):
         self.agentSpeed = agentSpeed      
         self.IN_PORT = inport
         self.IN_IP = '0.0.0.0'
         self.IN_ADDR = inAddr #"/toRLosc"
-
+        self.maxEpisodeSteps = maxEpisodeSteps
         self.OUT_IP = '127.0.0.1'
         self.OUT_PORT = outport
         self.OUT_ADDR = outAddr #"/fromRLosc"
@@ -179,7 +182,7 @@ class OscEnv(gym.Env):
         """Execute one timestep within the environment.
 
         Args:
-            action: The action to take (0-3 for directions)
+            action: The action to take.
 
         Returns:
             tuple: (observation, reward, terminated, truncated, info)
@@ -189,34 +192,52 @@ class OscEnv(gym.Env):
 
         # Update agent position, ensuring it stays within grid bounds
         # np.clip prevents the agent from walking off the edge
-        self._agent_location = np.clip(
-            self._agent_location + action*self.agentSpeed, -1, 1
-        )
+        #self._agent_location = np.clip(
+        #    self._agent_location + action*self.agentSpeed, -1, 1
+        #)
+        self.step_count += 1
+
+        self._agent_location = self._agent_location*0.99 + action*self.agentSpeed
+
         # print(self._agent_location)
         # print(type(self._agent_location))
         # self.client.send_message(self.OUT_ADDR, self._agent_location)
         self.act(self._agent_location)
+
         # Check if agent reached the target
-        # terminated = np.array_equal(self._agent_location, self._target_location)
-        terminated = False
+        #terminated = np.array_equal(self._agent_location, self._target_location)
+        #terminated = False
 
         # We don't use truncation in this simple environment
         # (could add a step limit here if desired)
-        truncated = False
-
-        # Simple reward structure: +1 for reaching target, 0 otherwise
-        # Alternative: could give small negative rewards for each step to encourage efficiency
-        
-        #ownLoudness = self.last_obs[1]
-        #otherLoudness = self.last_obs[0]
-
-        #reward = float(abs(ownLoudness/(self.last_obs[0]+1e-6)))
-        # reward = float(1/((np.sum(self.last_obs)) +1e-5)) #1 if terminated else 0
-        if internalReward:
+        #truncated = False
+        truncated = self.step_count >= self.maxEpisodeSteps
+        if self.internalReward:
             reward = float(np.sum(np.array(self.last_obs)))
         else:
             reward = self.last_reward
+
+        atBorder = np.sum(np.abs(self._agent_location)) > len(self._agent_location)/1.1
+
+        if atBorder:
+            self.stuckCount += 1
+            trunctaed=1
+        else:
+            self.stuckCount = 0
         
+        stuckLim = 50
+        if self.stuckCount>stuckLim:
+            truncated = 1
+            print('Agent stuck at border. Truncating.')
+
+        truncated = truncated or reward < -10
+        terminated = reward >= 0.99
+        
+        if truncated:
+            print('trunc')
+        if terminated:
+            print('term')
+
         self.client.send_message("/reward", reward)
         logger.info(f"Reward: {reward}")
 
@@ -243,10 +264,11 @@ class OscEnv(gym.Env):
             tuple: (observation, info) for the initial state
         """
         # IMPORTANT: Must call this first to seed the random number generator
-        super().reset(seed=seed)
-
+        #super().reset(seed=seed)
+        self.step_count = 0
+        self.stuckCount = 0
         # Randomly place the agent anywhere in the space
-        self._agent_location = self.np_random.random(size=self.size, dtype=np.float32)
+        self._agent_location = self.np_random.random(size=self.size, dtype=np.float32)*2-1
 
         #self._target_location = self.np_random.random(size=self.size, dtype=np.float32)
         # # Randomly place target, ensuring it's different from agent position
@@ -276,11 +298,21 @@ env = OscEnv(inport=INPORT,
              nAction=nAction, 
              dt=dt,
              internalReward = internalReward,
-             agentSpeed=agentSpeed  )
+             agentSpeed=agentSpeed,
+             maxEpisodeSteps=maxEpisodeSteps )
 obs, _ = env.reset()
 
 model = A2C("MultiInputPolicy", env, verbose=modelVerbosity)
-model.learn(total_timesteps=nSteps)
+print("Starting Training.")
+print(f"Will train for approximately :{nSteps * dt/60} minutes.")
+
+try:
+    model.learn(total_timesteps=nSteps)
+except KeyboardInterrupt:
+    print() 
+    print("Stopping…")
+    env.close()
+
 
 #vec_env = model.get_env()
 #obs = vec_env.reset()
