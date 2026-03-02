@@ -1,15 +1,15 @@
 import logging
 import os
-import sys
-import pandas as pd
-import json
-from urllib.parse import quote
-import re
-from collections import defaultdict
-import numpy as np
-import tomllib
+#import sys
+#import pandas as pd
+#import json
+#from urllib.parse import quote
+#import re
+#from collections import defaultdict
+#import numpy as np
+#import tomllib
 
-WEPYLIST_INDICATOR = "_wepyList_"
+#WEPYLIST_INDICATOR = "_wepyList_"
 
 class ColorFormatter(logging.Formatter):
     COLORS = {

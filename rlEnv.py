@@ -1,18 +1,22 @@
+#!/usr/bin/env python3
+
 from typing import Optional
 import numpy as np
-import gymnasium as gym
 import logging
-from util import ColorFormatter
 import warnings
 import time
 import threading
 import util
 import os
+import argparse
 from pythonosc import dispatcher, osc_server
+
+from util import ColorFormatter
+# RL related imports
+import gymnasium as gym
 from pythonosc.udp_client import SimpleUDPClient
 from gymnasium.utils.env_checker import check_env
 from stable_baselines3 import A2C
-import argparse
 
 parser = argparse.ArgumentParser(
                     prog='RL OSC',
@@ -313,29 +317,3 @@ except KeyboardInterrupt:
     print("Stopping…")
     env.close()
 
-
-#vec_env = model.get_env()
-#obs = vec_env.reset()
-#for i in range(nSteps):
-#    action, _state = model.predict(obs, deterministic=True)
-#    obs, reward, done, info = vec_env.step(action)
-    
-    # vec_env.render("human")
-    # VecEnv resets automatically
-    # if done:
-    #   obs = vec_env.reset()
-
-# try:
-#     # optional check
-#     check_env(env)
-
-#     logger.info("Running... press Ctrl+C to stop.")
-
-#     while True:
-#         time.sleep(1)      # or your RL loop
-#         action = env.action_space.sample()
-#         env.step(action)
-
-# except KeyboardInterrupt:
-#     print("Stopping…")
-#     env.close()
