@@ -7,8 +7,11 @@ python -m venv venv
 source venv/bin/activate   # or venv\Scripts\activate on Windows
 pip install -r requirements.txt
 ```
-
+## Tests
 Tested on linux only.
+
+To run simple tests, make sure the requirements are installed and the environment is activated. Then:
+`python -m pytest`
 
 ## Run:
 
@@ -22,6 +25,8 @@ By default, reward needs to be sent as well as observations. There is a flag `-r
 ## Inference
 Currently there is no possibility to run a trained network. This would be easy to do but this project is more interested in the learning and observing exploration in real time.
 
+
+
 ## Acknowledgements
 Made in The Project "Spirits in Comnplexity", funded by the Austrian Science Fund [10.55776/AR821].
 
@@ -29,3 +34,5 @@ Made in The Project "Spirits in Comnplexity", funded by the Austrian Science Fun
 ## Todos
 - Document default adresses in readme.
 - shebang & rights.
+- manage requirements better
+- add pytest to requirements.

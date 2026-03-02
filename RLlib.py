@@ -1,0 +1,223 @@
+from typing import Optional
+import numpy as np
+import logging
+import time
+import threading
+from util import ColorFormatter
+
+# OSC stuff
+from pythonosc.udp_client import SimpleUDPClient
+from pythonosc import dispatcher, osc_server
+
+# RL related imports
+import gymnasium as gym
+from gymnasium.utils.env_checker import check_env
+#from stable_baselines3 import A2C
+
+
+logger = logging.getLogger("colored_logger")
+
+# https://gymnasium.farama.org/introduction/create_custom_env/
+class OscEnv(gym.Env):
+    def __init__(self, inport=5000, outport=3030, 
+                 inAddr = '/toRLosc', 
+                 outAddr = 'fromRLosc', 
+                 nObserv=8, 
+                 nAction=8, 
+                 dt=0.1,
+                 internalReward = True,
+                 agentSpeed=0.01, maxEpisodeSteps = 500 ):
+        self.agentSpeed = agentSpeed      
+        self.IN_PORT = inport
+        self.IN_IP = '0.0.0.0'
+        self.IN_ADDR = inAddr #"/toRLosc"
+        self.maxEpisodeSteps = maxEpisodeSteps
+        self.OUT_IP = '127.0.0.1'
+        self.OUT_PORT = outport
+        self.OUT_ADDR = outAddr #"/fromRLosc"
+
+        self.size = nObserv
+        self.nAction = nAction
+        self.dt = dt
+        self.last_obs = np.zeros(self.size, dtype=np.float32)
+        self.internalReward = internalReward 
+        
+        self.disp = dispatcher.Dispatcher()
+        self.disp.map(self.IN_ADDR, self.handle_osc_input)
+        if not self.internalReward:
+            self.last_reward = 0
+            self.disp.map('/reward', self.handle_osc_input)
+
+        self.server = osc_server.ThreadingOSCUDPServer((self.IN_IP, self.IN_PORT), self.disp)
+        logger.info(f"Listening for OSC on port {self.IN_PORT}...")
+        
+        self.thread = threading.Thread(
+            target=self.server.serve_forever,
+            daemon=True
+        )
+        self.thread.start()
+
+         # client for actions
+        self.client = SimpleUDPClient(self.OUT_IP, self.OUT_PORT)
+
+        self.observation_space = gym.spaces.Dict(
+            {
+                "agentState": gym.spaces.Box(low=0, high=1, shape=(self.size,), dtype=np.float32),   # own state, possibly current latent space
+                "envState": gym.spaces.Box(low=0, high=1, shape=(self.size,), dtype=np.float32),  # input audio features (other agents state).
+            }
+        )
+
+        self.action_space = gym.spaces.Box(low=-1,high=1, shape=(nAction,), dtype=np.float32)
+
+    def handle_osc_input(self, addr, *args):
+        if addr==self.IN_ADDR:
+            logger.debug(args)
+            data = np.array(args[:self.size],dtype=np.float32)
+            logger.debug(f"data received: {data}")
+            if len(data) != self.size:
+                logger.critical("Received the wrong number of observations!")
+                logger.critical(f"Data received: {data}")
+                #self.last_obs = np.zeros(self.size)
+                return
+            self.last_obs = data
+
+        elif addr == '/reward':
+            rew = float(args[0])
+            logger.debug(f'Received reward: {rew}')
+            self.last_reward = rew
+        else:
+            print(f'Rceived something weird: {addr}')
+
+    def _get_obs(self):
+        """Convert internal state to observation format.
+
+        Returns:
+            dict: Observation with agent and target positions
+        """
+        return {"agentState": self._agent_location, "envState": self.last_obs}
+
+    def _get_info(self):
+        """Compute auxiliary information for debugging.
+
+        Returns:
+            dict: Info with distance between agent and target
+        """
+        return {
+            "inputFeatures": 
+                self.last_obs
+        }
+
+    
+    def step(self, action):
+        """Execute one timestep within the environment.
+
+        Args:
+            action: The action to take.
+
+        Returns:
+            tuple: (observation, reward, terminated, truncated, info)
+        """
+        # Map the discrete action (0-3) to a movement direction
+        # direction = self._action_to_direction[action]
+
+        # Update agent position, ensuring it stays within grid bounds
+        # np.clip prevents the agent from walking off the edge
+        #self._agent_location = np.clip(
+        #    self._agent_location + action*self.agentSpeed, -1, 1
+        #)
+        self.step_count += 1
+
+        self._agent_location = self._agent_location*0.99 + action*self.agentSpeed
+
+        # print(self._agent_location)
+        # print(type(self._agent_location))
+        # self.client.send_message(self.OUT_ADDR, self._agent_location)
+        self.act(self._agent_location)
+
+        # Check if agent reached the target
+        #terminated = np.array_equal(self._agent_location, self._target_location)
+        #terminated = False
+
+        # We don't use truncation in this simple environment
+        # (could add a step limit here if desired)
+        #truncated = False
+        truncated = self.step_count >= self.maxEpisodeSteps
+        if self.internalReward:
+            reward = float(np.sum(np.array(self.last_obs)))
+        else:
+            reward = self.last_reward
+
+        atBorder = np.sum(np.abs(self._agent_location)) > len(self._agent_location)/1.1
+
+        if atBorder:
+            self.stuckCount += 1
+            trunctaed=1
+        else:
+            self.stuckCount = 0
+        
+        stuckLim = 50
+        if self.stuckCount>stuckLim:
+            truncated = 1
+            print('Agent stuck at border. Truncating.')
+
+        truncated = truncated or reward < -10
+        terminated = reward >= 0.99
+        
+        if truncated:
+            print('trunc')
+        if terminated:
+            print('term')
+
+        self.client.send_message("/reward", reward)
+        logger.info(f"Reward: {reward}")
+
+        observation = self._get_obs()
+        logger.debug(f"Observation: {observation}")
+        info = self._get_info()
+        time.sleep(self.dt)
+        return observation, reward, terminated, truncated, info
+    
+
+
+    def act(self, vals):
+        nativeList = [float(v) for v in vals] 
+        self.client.send_message(self.OUT_ADDR, nativeList)
+
+    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None):
+        """Start a new episode.
+
+        Args:
+            seed: Random seed for reproducible episodes
+            options: Additional configuration (unused in this example)
+
+        Returns:
+            tuple: (observation, info) for the initial state
+        """
+        # IMPORTANT: Must call this first to seed the random number generator
+        #super().reset(seed=seed)
+        self.step_count = 0
+        self.stuckCount = 0
+        # Randomly place the agent anywhere in the space
+        self._agent_location = self.np_random.random(size=self.size, dtype=np.float32)*2-1
+
+        #self._target_location = self.np_random.random(size=self.size, dtype=np.float32)
+        # # Randomly place target, ensuring it's different from agent position
+        # self._target_location = self._agent_location
+        # while np.array_equal(self._target_location, self._agent_location):
+        #     self._target_location = self.np_random.integers(
+        #         0, self.size, size=2, dtype=int
+        #     )
+
+        observation = self._get_obs()
+        info = self._get_info()
+
+        return observation, info
+
+    def close(self):
+        if hasattr(self, "server"):
+            self.server.shutdown()   # stops serve_forever()
+            self.server.server_close()
+        if hasattr(self, "thread"):
+            self.thread.join(timeout=1.0)
+
+
