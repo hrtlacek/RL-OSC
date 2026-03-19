@@ -36,3 +36,5 @@ Made in The Project "Spirits in Comnplexity", funded by the Austrian Science Fun
 - shebang & rights.
 - manage requirements better
 - add pytest to requirements.
+- write actual test with python server
+- offer more models
