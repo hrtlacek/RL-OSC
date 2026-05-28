@@ -86,7 +86,7 @@ class OscEnv(gym.Env):
             logger.debug(f'Received reward: {rew}')
             self.last_reward = rew
         else:
-            print(f'Rceived something weird: {addr}')
+            logger.critical(f'Rceived something weird: {addr}')
 
     def _get_obs(self):
         """Convert internal state to observation format.
@@ -127,20 +127,13 @@ class OscEnv(gym.Env):
         #)
         self.step_count += 1
 
-        self._agent_location = self._agent_location*0.99 + action*self.agentSpeed
+        self._agent_location = self._agent_location + action*self.agentSpeed
 
         # print(self._agent_location)
         # print(type(self._agent_location))
         # self.client.send_message(self.OUT_ADDR, self._agent_location)
         self.act(self._agent_location)
 
-        # Check if agent reached the target
-        #terminated = np.array_equal(self._agent_location, self._target_location)
-        #terminated = False
-
-        # We don't use truncation in this simple environment
-        # (could add a step limit here if desired)
-        #truncated = False
         truncated = self.step_count >= self.maxEpisodeSteps
         if self.internalReward:
             reward = float(np.sum(np.array(self.last_obs)))
@@ -158,18 +151,21 @@ class OscEnv(gym.Env):
         stuckLim = 50
         if self.stuckCount>stuckLim:
             truncated = 1
-            print('Agent stuck at border. Truncating.')
+            logger.info(f'Agent stuck at border for {stuckLim} steps. Truncating.')
 
-        truncated = truncated or reward < -10
-        terminated = reward >= 0.99
+        if reward < -1:
+            truncated = 1
+            logger.info(f"Reward function < -10. Truncating episode.")
+
+        terminated = reward >= 0.9
         
-        if truncated:
-            print('trunc')
+        # if truncated:
+        #     print('truncated')
         if terminated:
-            print('term')
+            logger.debug('Terminated: Reward over 0.99')
 
         self.client.send_message("/reward", reward)
-        logger.info(f"Reward: {reward}")
+        logger.debug(f"Reward: {reward}")
 
         observation = self._get_obs()
         logger.debug(f"Observation: {observation}")
@@ -215,7 +211,7 @@ class OscEnv(gym.Env):
 
     def close(self):
         if hasattr(self, "server"):
-            self.server.shutdown()   # stops serve_forever()
+            self.server.shutdown()
             self.server.server_close()
         if hasattr(self, "thread"):
             self.thread.join(timeout=1.0)

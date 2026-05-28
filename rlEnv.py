@@ -89,13 +89,13 @@ env = OscEnv(inport=INPORT,
 obs, _ = env.reset()
 
 model = A2C("MultiInputPolicy", env, verbose=modelVerbosity)
-print("Starting Training.")
-print(f"Will train for approximately :{nSteps * dt/60} minutes.")
+logger.info("Starting Training.")
+logger.info((f"Will train for approximately :{nSteps * dt/60} minutes."))
 
 try:
     model.learn(total_timesteps=nSteps)
 except KeyboardInterrupt:
     print() 
-    print("Stopping…")
+    logger.info("Stopping…")
     env.close()
 
